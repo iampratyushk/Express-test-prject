@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.16.0
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build project
+        run: npm run build
+
+      - name: Deploy with rsync
+        uses: burnett01/rsync-deployments@5.1
+        with:
+          switches: -avzr --delete --exclude=node_modules
+          path: ./
+          remote_path: /home/ubuntu/backend
+          remote_host: 3.109.203.235
+          remote_user: ubuntu
+          remote_key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Save SSH key to runner
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/ssh_key
+          chmod 700 ~/.ssh
+          chmod 600 ~/.ssh/ssh_key
+
+      - name: Restart app using PM2
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/ssh_key ubuntu@3.109.203.235 << 'EOF'
+            # Ensure backend directory exists
+            mkdir -p /home/ubuntu/backend
+
+            # Setup NVM/Node if needed
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+            export PATH="$HOME/.nvm/versions/node/$(ls $HOME/.nvm/versions/node)/bin:$PATH"
+
+            cd /home/ubuntu/backend
+
+            # Install fresh dependencies
+            npm ci
+
+            # Reload or start app
+            pm2 reload app || pm2 start npm --name "app" -- start
+          EOF
