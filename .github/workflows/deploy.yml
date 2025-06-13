@@ -58,6 +58,7 @@ jobs:
             # Install fresh dependencies
             npm ci
 
-            # Reload or start app
-            pm2 reload app || pm2 start npm --name "app" -- start
+            # Restart app using known PM2 process name or ID
+            pm2 reload index || pm2 start npm --name "index" -- start
           EOF
+
